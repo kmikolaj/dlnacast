@@ -9,6 +9,7 @@ var opts = minimist(process.argv.slice(2))
 var MediaRendererClient = require('upnp-mediarenderer-client')
 var smfs = require('static-file-server')
 var path = require('path')
+var url = require('is-url')
 
 function DIDLMetadata (url, type, title, subtitle) {
   var DIDL = ''
@@ -79,7 +80,7 @@ function runDLNA (cli, fileUrl, subUrl, type, name) {
   }
 }
 
-var discover = function (cb) {
+var discoverFirst = function (cb) {
   var finder = new RendererFinder()
 
   finder.findOne(function (err, info, msg) {
@@ -94,11 +95,34 @@ var discover = function (cb) {
   }, 5000)
 }
 
+var discoverName = function (name, cb) {
+  var finder = new RendererFinder()
+
+  finder.on('found', function (info, msg, desc) {
+    if (name == desc.device.friendlyName)
+    {
+      finder.stop()
+      clearTimeout(to)
+      cb(undefined, msg.location)
+    }
+  })
+
+  var to = setTimeout(function () {
+    finder.stop()
+    clearTimeout(to)
+    cb(new Error('device not found'))
+  }, 5000)
+
+  finder.start(true)
+}
+
 var connect = function (address, cb) {
-    if (address) {
+    if (url(address)) {
       connect_prepare(null, address)
+    } else if (address) {
+      discoverName(address, connect_prepare)
     } else {
-      discover(connect_prepare)
+      discoverFirst(connect_prepare)
     }
     function connect_prepare(err, loc) {
       if (err) {
@@ -202,7 +226,7 @@ module.exports = {
 
 // check if the module is called from a terminal of required from anothe module
 if (require.main === module) {
-  var address = opts.address ? opts.address : opts.a
+  var address = opts.address ? opts.address : opts.a ? opts.a : opts.name
   if (opts.command || opts.c) {
     module.exports.command(address, opts.command ? opts.command : opts.c)
   } else if (opts.listRenderer || opts.l) {
@@ -218,8 +242,8 @@ if (require.main === module) {
   } else if (opts._.length) {
     module.exports.renderMedia(opts._[0], opts.type, address, opts.subtitle)
   } else {
-    console.log('Usage: dlnacast [--type <mime>] [--address <tv-ip>] [--subtitle <file>] <file>')
-    console.log('Usage: dlnacast [--type <mime>] [--address <tv-ip>] --stream <URL>')
+    console.log('Usage: dlnacast [--type <mime>] [--name <tv-name>] [--address <tv-ip>] [--subtitle <file>] <file>')
+    console.log('Usage: dlnacast [--type <mime>] [--name <tv-name>] [--address <tv-ip>] --stream <URL>')
     console.log('Usage: dlnacast --listRenderer')
     process.exit()
   }
